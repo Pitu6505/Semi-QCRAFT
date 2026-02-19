@@ -1,7 +1,11 @@
+# circuit_Compresor.py
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
-from qiskit.transpiler import CouplingMap
 
 class AdvancedTopologyCompressor:
+    """
+    Compresor Dinámico que adelanta medidas, reutiliza qubits y mapea 
+    el resultado a la topología física de una máquina real.
+    """
     def __init__(self, coupling_map=None):
         self.coupling_map = coupling_map
 
@@ -48,7 +52,6 @@ class AdvancedTopologyCompressor:
                 
             start_time = max(qubit_current_time[q] for q in qargs)
             
-            # ¡CORRECCIÓN AQUÍ! La barrera actualiza el reloj de todos sus qubits
             if inst.operation.name == 'barrier':
                 for q in qargs:
                     qubit_current_time[q] = start_time
@@ -92,10 +95,8 @@ class AdvancedTopologyCompressor:
         return new_qc
 
     def compress_and_map(self, circuit):
-        print(f"1. Circuito Original: {circuit.num_qubits} qubits lógicos.")
-        
+        print(f"-> Circuito Original: {circuit.num_qubits} qubits lógicos.")
         qc_early = self._advance_measurements(circuit)
-        print("2. Medidas adelantadas con éxito.")
         
         lifetimes = self._get_qubit_lifetimes(qc_early)
         sorted_qubits = sorted(lifetimes.keys(), key=lambda q: lifetimes[q]['start'])
@@ -125,42 +126,14 @@ class AdvancedTopologyCompressor:
 
         num_phys = len(physical_lanes_end_time)
         qc_compressed = self._rebuild_circuit(qc_early, logical_to_physical_map, resets_needed, num_phys)
-        print(f"3. Compresión Dinámica completada: de {circuit.num_qubits} a {num_phys} qubits físicos.")
+        print(f"-> Compresión completada: de {circuit.num_qubits} a {num_phys} qubits físicos.")
         
         if self.coupling_map:
-            print("4. Adaptando a la topología de la máquina física...")
+            print("-> Adaptando a la topología física (Routing)...")
             qc_mapped = transpile(qc_compressed, 
                                   coupling_map=self.coupling_map, 
                                   optimization_level=3, 
                                   routing_method='sabre')
-            print(f"   -> Mapeo completado. Listo para enviar a IBM/AWS.")
             return qc_mapped
         else:
             return qc_compressed
-
-
-# ==========================================
-# PRUEBA CORREGIDA
-# ==========================================
-mapa_simulado = CouplingMap([[0, 1], [1, 0], [1, 2], [2, 1], [2, 3], [3, 2]])
-
-qc = QuantumCircuit(4, 4)
-
-qc.h(0)
-qc.cx(0, 1)
-
-qc.barrier() 
-
-qc.x(2)
-qc.cx(2, 3)
-
-qc.measure([0, 1, 2, 3], [0, 1, 2, 3])
-
-print("\n--- INICIANDO PROCESO DE OPTIMIZACIÓN ---")
-compressor = AdvancedTopologyCompressor(coupling_map=mapa_simulado)
-print("Circuito Original:")
-print(qc)
-circuito_final_optimizado = compressor.compress_and_map(qc)
-
-print("\n--- CIRCUITO FINAL OPTIMIZADO PARA HARDWARE ---")
-print(circuito_final_optimizado)
