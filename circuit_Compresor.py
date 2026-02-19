@@ -13,6 +13,7 @@ class AdvancedTopologyCompressor:
         last_gate_idx = {q: -1 for q in circuit.qubits}
         measures = {} 
         
+        # 1. Analizamos dónde está la última puerta de cada qubit
         for i, inst in enumerate(circuit.data):
             if inst.operation.name == 'measure':
                 measures[inst.qubits[0]] = inst.clbits[0]
@@ -20,20 +21,31 @@ class AdvancedTopologyCompressor:
                 for q in inst.qubits:
                     last_gate_idx[q] = i
                     
+        # Creamos el circuito en blanco
         new_qc = QuantumCircuit(*circuit.qregs, *circuit.cregs)
         measured_qubits = set()
         
+        # Si un qubit se mide pero nunca tuvo puertas lógicas (last_gate_idx == -1),
+        # lo medimos ahora mismo al principio del todo para no arrastrarlo.
+        for q, c in measures.items():
+            if last_gate_idx[q] == -1:
+                new_qc.measure(q, c)
+                measured_qubits.add(q)
+        
+        # 2. Reconstruimos el circuito
         for i, inst in enumerate(circuit.data):
             if inst.operation.name == 'measure':
                 continue 
                 
             new_qc.append(inst.operation, inst.qubits, inst.clbits)
             
+            # Revisar si acabamos de añadir la ÚLTIMA puerta útil de algún qubit
             for q in inst.qubits:
                 if last_gate_idx[q] == i and q in measures and q not in measured_qubits:
                     new_qc.measure(q, measures[q])
                     measured_qubits.add(q)
                     
+        # 3. Por seguridad, si quedó alguna medida rezagada, la ponemos al final
         for q, c in measures.items():
             if q not in measured_qubits:
                 new_qc.measure(q, c)
