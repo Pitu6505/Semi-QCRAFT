@@ -1,38 +1,46 @@
 # main.py
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, transpile
 from Ibm_api import get_backend_data
 from circuit_Compresor import AdvancedTopologyCompressor
-
-# Importamos las credenciales de forma segura
 from config import IBM_API_KEY, IBM_INSTANCE_CRN
 
-# Usamos las variables importadas
+# 1. Obtenemos los datos de la máquina real
 cmap, qubit_props, gate_props, backend = get_backend_data(
     IBM_API_KEY, 
     IBM_INSTANCE_CRN, 
     "ibm_fez"
 )
 
+# Simulamos que el usuario nos envía el circuito "sucio" (ej. shor_qcraft)
+# que tiene operaciones redundantes o mal ordenadas.
+circuito_usuario = QuantumCircuit(4, 4)
+
+# Tarea 1: Ocurre al principio
+circuito_usuario.cx(1, 2)
+circuito_usuario.barrier() 
+circuito_usuario.cx(0, 3) 
+circuito_usuario.measure([0, 1, 2, 3], [0, 1, 2, 3])
+
+print("\n=== INICIANDO PIPELINE QCaaS ===")
+
 if cmap is not None:
+
+    print("\n Circuito original enviado por el usuario:")
+    print(circuito_usuario)
+    # =======================================================
+    # PASO 1: LIMPIEZA LÓGICA (Pre-procesamiento Software)
+    # =======================================================
+    print("1. Ejecutando limpieza lógica (Qiskit Nivel 3)...")
+    circuito_limpio = transpile(circuito_usuario, optimization_level=3)
+    
+    # =======================================================
+    # PASO 2 y 3: COMPRESIÓN DINÁMICA Y ENRUTAMIENTO FÍSICO
+    # =======================================================
+    print("\n2. Ejecutando Compresión Temporal y Mapeo Físico...")
     compressor = AdvancedTopologyCompressor(coupling_map=cmap)
-
-    qc = QuantumCircuit(4, 4)
-    qc.h(0)
-    qc.cx(0, 1)
-    qc.barrier() 
-    qc.x(2)
-    qc.cx(2, 3)
-    qc.measure([0, 1, 2, 3], [0, 1, 2, 3])
-
-    print("\n--- INICIANDO OPTIMIZACIÓN ---")
-    print("Circuito Original:")
-    print(qc)
-    circuito_optimizado = compressor.compress_and_map(qc)
     
-    print("\n--- CIRCUITO OPTIMIZADO ---")
-    print(circuito_optimizado)
+    circuito_final_optimizado = compressor.compress_and_map(circuito_limpio)
     
-    # 3. AQUÍ ENTRARÍA TU MOCHILA
-    # Le pasas: 
-    # - circuito_optimizado (que ahora es más pequeño)
-    # - qubit_props (para que tu mochila elija las mejores zonas del chip basándose en la calibración)
+    print("\n=== OPTIMIZACIÓN COMPLETADA ===")
+    print(circuito_final_optimizado)
+    
