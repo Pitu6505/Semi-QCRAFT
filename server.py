@@ -94,17 +94,29 @@ async def submit_jobs(request: JobRequest):
     if not ganadores:
          raise HTTPException(status_code=400, detail="Los circuitos son demasiado grandes para la máquina elegida.")
 
-    # 4. ENSAMBLAJE Y MAPEO DE BITS CLÁSICOS
-    mega_circuito = QuantumCircuit()
+    # 4. ENSAMBLAJE Y MAPEO DE BITS CLÁSICOS (CORREGIDO)
+    # Primero calculamos el tamaño total que necesitamos
+    total_q = sum(circ.num_qubits for _, circ in ganadores)
+    total_c = sum(circ.num_clbits for _, circ in ganadores)
+    
+    # Creamos un Mega-Circuito pre-asignado (evita colisiones de nombres de registros)
+    mega_circuito = QuantumCircuit(total_q, total_c)
     mapa_bits = {} 
+    offset_q = 0
     offset_c = 0
     
     for nombre, circ in ganadores:
-        mega_circuito.add_register(*circ.qregs, *circ.cregs)
-        mega_circuito.compose(circ, qubits=range(mega_circuito.num_qubits - circ.num_qubits, mega_circuito.num_qubits), 
-                              clbits=range(offset_c, offset_c + circ.num_clbits), inplace=True)
+        # Añadimos las instrucciones desplazando los cables lógicos para que no se pisen
+        mega_circuito.compose(circ, 
+                              qubits=range(offset_q, offset_q + circ.num_qubits), 
+                              clbits=range(offset_c, offset_c + circ.num_clbits), 
+                              inplace=True)
         
+        # Guardamos que el "Usuario X" lee desde el bit Y hasta el Z
         mapa_bits[nombre] = {"inicio": offset_c, "longitud": circ.num_clbits}
+        
+        # Avanzamos los desplazamientos para el siguiente usuario
+        offset_q += circ.num_qubits
         offset_c += circ.num_clbits
 
     # 5. COMPRESIÓN FÍSICA Y ENVÍO A LA NUBE
@@ -135,7 +147,7 @@ async def submit_jobs(request: JobRequest):
         "usuarios_aceptados": list(mapa_bits.keys())
     }
 
-@app.get("/results/{job_id}")
+@app.get("/results/{job_id:path}")
 async def get_results(job_id: str):
     if job_id not in base_de_datos_trabajos:
         raise HTTPException(status_code=404, detail="Job ID no encontrado en la plataforma")
@@ -143,10 +155,12 @@ async def get_results(job_id: str):
     job_info = base_de_datos_trabajos[job_id]
     job = job_info["job_obj"]
     
-    # Extraemos el estado (compatible con IBM y AWS Braket Qiskit Provider)
+# Extraemos el estado y lo ponemos en mayúsculas para evitar fallos
     status = job.status().name if hasattr(job.status(), 'name') else str(job.status())
+    status = status.upper()
     
-    if status != "DONE":
+    # Aceptamos tanto el DONE de IBM como el COMPLETED de AWS
+    if "DONE" not in status and "COMPLETED" not in status:
         return {"job_id": job_id, "status": status, "message": "Ejecutándose en el refrigerador cuántico..."}
         
     # --- DESEMPAQUETADO DE RESULTADOS (EL CORTE DEL TETRIS) ---
